@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Data;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -18,18 +19,21 @@ namespace VendingMachine___Badr_Almashrea___30139708
         private decimal totalCost = 0;
         private decimal amountPaid = 0;
         private bool inCheckoutMode = false;
-        private string studentNumber = "30139708";
+        private readonly string studentNumber = "30139708";
 
-        private List<Product> selectedProducts = new List<Product>();
-        private List<Product> allProducts = new List<Product>();
-        private VendingMachineSettings machineSettings = new VendingMachineSettings();
+        private readonly List<Product> selectedProducts = new List<Product>();
+        private readonly List<Product> allProducts = new List<Product>();
+        private readonly VendingMachineSettings machineSettings = new VendingMachineSettings();
 
         // File paths for data persistence
-        private string stockFile = "Items.txt";
-        private string invoicesFile = "Invoices.txt";
-        private string transactionsFolder = "Transactions";
-        private string settingsFile = "MachineSettings.txt";
-        private string imagesFolder = "Images";
+        private readonly string baseDirectory;
+        private readonly string dataDirectory;
+        private string stockFile;
+        private string invoicesFile;
+        private string transactionsFolder;
+        private string settingsFile;
+        private string imagesFolder;
+        private string logsFolder;
 
         // Colors for UI
         private Color colorPrimary = Color.FromArgb(0, 100, 180);
@@ -42,6 +46,15 @@ namespace VendingMachine___Badr_Almashrea___30139708
         public Form1()
         {
             InitializeComponent();
+            baseDirectory = AppDomain.CurrentDomain.BaseDirectory;
+            dataDirectory = Path.Combine(baseDirectory, "Data");
+            imagesFolder = Path.Combine(baseDirectory, "Images");
+            stockFile = Path.Combine(dataDirectory, "Items.txt");
+            invoicesFile = Path.Combine(dataDirectory, "Invoices.txt");
+            settingsFile = Path.Combine(dataDirectory, "MachineSettings.txt");
+            transactionsFolder = Path.Combine(dataDirectory, "Transactions");
+            logsFolder = Path.Combine(dataDirectory, "Logs");
+
             SetupVendingMachine();
         }
 
@@ -83,12 +96,11 @@ namespace VendingMachine___Badr_Almashrea___30139708
         {
             try
             {
-                if (!Directory.Exists(transactionsFolder))
-                    Directory.CreateDirectory(transactionsFolder);
-                if (!Directory.Exists("Logs"))
-                    Directory.CreateDirectory("Logs");
-                if (!Directory.Exists(imagesFolder))
-                    Directory.CreateDirectory(imagesFolder);
+                Directory.CreateDirectory(dataDirectory);
+                Directory.CreateDirectory(transactionsFolder);
+                Directory.CreateDirectory(logsFolder);
+                Directory.CreateDirectory(imagesFolder);
+                Directory.CreateDirectory(Path.Combine(dataDirectory, "Images"));
             }
             catch (Exception ex)
             {
@@ -100,6 +112,8 @@ namespace VendingMachine___Badr_Almashrea___30139708
         {
             try
             {
+                MigrateLegacyDataFiles();
+
                 // Create Items.txt if it doesn't exist
                 if (!File.Exists(stockFile))
                 {
@@ -109,6 +123,11 @@ namespace VendingMachine___Badr_Almashrea___30139708
                 // Create Invoices.txt if it doesn't exist
                 if (!File.Exists(invoicesFile))
                 {
+                    string invoicesDirectory = Path.GetDirectoryName(invoicesFile);
+                    if (!string.IsNullOrEmpty(invoicesDirectory))
+                    {
+                        Directory.CreateDirectory(invoicesDirectory);
+                    }
                     File.WriteAllText(invoicesFile, "VENDING MACHINE INVOICES\n" + new string('=', 50) + "\n\n");
                 }
 
@@ -124,19 +143,67 @@ namespace VendingMachine___Badr_Almashrea___30139708
             }
         }
 
+        private void MigrateLegacyDataFiles()
+        {
+            try
+            {
+                string legacyItems = Path.Combine(baseDirectory, "Items.txt");
+                if (File.Exists(legacyItems) && !File.Exists(stockFile))
+                {
+                    string stockDirectory = Path.GetDirectoryName(stockFile);
+                    if (!string.IsNullOrEmpty(stockDirectory))
+                    {
+                        Directory.CreateDirectory(stockDirectory);
+                    }
+                    File.Copy(legacyItems, stockFile, true);
+                }
+
+                string legacyInvoices = Path.Combine(baseDirectory, "Invoices.txt");
+                if (File.Exists(legacyInvoices) && !File.Exists(invoicesFile))
+                {
+                    string invoicesDirectory = Path.GetDirectoryName(invoicesFile);
+                    if (!string.IsNullOrEmpty(invoicesDirectory))
+                    {
+                        Directory.CreateDirectory(invoicesDirectory);
+                    }
+                    File.Copy(legacyInvoices, invoicesFile, true);
+                }
+
+                string legacySettings = Path.Combine(baseDirectory, "MachineSettings.txt");
+                if (File.Exists(legacySettings) && !File.Exists(settingsFile))
+                {
+                    string settingsDirectory = Path.GetDirectoryName(settingsFile);
+                    if (!string.IsNullOrEmpty(settingsDirectory))
+                    {
+                        Directory.CreateDirectory(settingsDirectory);
+                    }
+                    File.Copy(legacySettings, settingsFile, true);
+                }
+            }
+            catch (Exception ex)
+            {
+                LogError($"Legacy file migration failed: {ex.Message}");
+            }
+        }
+
         private void CreateDefaultItemsFile()
         {
             try
             {
                 StringBuilder defaultItems = new StringBuilder();
-                defaultItems.AppendLine("Coca Cola,1.50,10,COKE001,Soft Drink,coke.jpg");
-                defaultItems.AppendLine("Zero Coca Cola,1.50,8,COKE002,Soft Drink,coke_zero.jpg");
-                defaultItems.AppendLine("Pepsi,1.40,12,PEPSI003,Soft Drink,pepsi.jpg");
-                defaultItems.AppendLine("Fanta Orange,1.40,10,FANTA004,Soft Drink,fanta.jpg");
-                defaultItems.AppendLine("Red Bull,2.20,6,REDBULL005,Energy Drink,redbull.jpg");
-                defaultItems.AppendLine("Sprite,1.30,15,SPRITE006,Soft Drink,sprite.jpg");
-                defaultItems.AppendLine("Water,1.00,20,WATER007,Water,water.jpg");
+                defaultItems.AppendLine(string.Join(",", "Coca Cola", 1.50m.ToString(CultureInfo.InvariantCulture), 10, "COKE001", "Soft Drink", "coke.jpg"));
+                defaultItems.AppendLine(string.Join(",", "Zero Coca Cola", 1.50m.ToString(CultureInfo.InvariantCulture), 8, "COKE002", "Soft Drink", "coke_zero.jpg"));
+                defaultItems.AppendLine(string.Join(",", "Pepsi", 1.40m.ToString(CultureInfo.InvariantCulture), 12, "PEPSI003", "Soft Drink", "pepsi.jpg"));
+                defaultItems.AppendLine(string.Join(",", "Fanta Orange", 1.40m.ToString(CultureInfo.InvariantCulture), 10, "FANTA004", "Soft Drink", "fanta.jpg"));
+                defaultItems.AppendLine(string.Join(",", "Red Bull", 2.20m.ToString(CultureInfo.InvariantCulture), 6, "REDBULL005", "Energy Drink", "redbull.jpg"));
+                defaultItems.AppendLine(string.Join(",", "Sprite", 1.30m.ToString(CultureInfo.InvariantCulture), 15, "SPRITE006", "Soft Drink", "sprite.jpg"));
+                defaultItems.AppendLine(string.Join(",", "Water", 1.00m.ToString(CultureInfo.InvariantCulture), 20, "WATER007", "Water", "water.jpg"));
 
+                string stockDirectory = Path.GetDirectoryName(stockFile);
+                if (!string.IsNullOrEmpty(stockDirectory))
+                {
+                    Directory.CreateDirectory(stockDirectory);
+                }
                 File.WriteAllText(stockFile, defaultItems.ToString());
             }
             catch (Exception ex)
@@ -163,9 +230,28 @@ namespace VendingMachine___Badr_Almashrea___30139708
                     {
                         machineSettings.MachineId = lines[0];
                         machineSettings.Location = lines[1];
-                        machineSettings.TotalRevenue = decimal.Parse(lines[2]);
-                        machineSettings.TotalTransactions = int.Parse(lines[3]);
-                        machineSettings.LastRestock = DateTime.Parse(lines[4]);
+
+                        if (!decimal.TryParse(lines[2], NumberStyles.Number, CultureInfo.InvariantCulture, out decimal totalRevenue))
+                        {
+                            decimal.TryParse(lines[2], NumberStyles.Number, CultureInfo.CurrentCulture, out totalRevenue);
+                        }
+
+                        if (!int.TryParse(lines[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out int totalTransactions))
+                        {
+                            int.TryParse(lines[3], NumberStyles.Integer, CultureInfo.CurrentCulture, out totalTransactions);
+                        }
+
+                        if (!DateTime.TryParseExact(lines[4], "o", CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out DateTime lastRestock))
+                        {
+                            if (!DateTime.TryParse(lines[4], CultureInfo.CurrentCulture, DateTimeStyles.AssumeLocal, out lastRestock))
+                            {
+                                lastRestock = DateTime.Now;
+                            }
+                        }
+
+                        machineSettings.TotalRevenue = totalRevenue;
+                        machineSettings.TotalTransactions = totalTransactions;
+                        machineSettings.LastRestock = lastRestock;
                     }
                 }
                 else
@@ -189,13 +275,19 @@ namespace VendingMachine___Badr_Almashrea___30139708
         {
             try
             {
+                string settingsDirectory = Path.GetDirectoryName(settingsFile);
+                if (!string.IsNullOrEmpty(settingsDirectory))
+                {
+                    Directory.CreateDirectory(settingsDirectory);
+                }
+
                 using (StreamWriter writer = new StreamWriter(settingsFile))
                 {
                     writer.WriteLine(machineSettings.MachineId);
                     writer.WriteLine(machineSettings.Location);
-                    writer.WriteLine(machineSettings.TotalRevenue);
-                    writer.WriteLine(machineSettings.TotalTransactions);
-                    writer.WriteLine(machineSettings.LastRestock);
+                    writer.WriteLine(machineSettings.TotalRevenue.ToString(CultureInfo.InvariantCulture));
+                    writer.WriteLine(machineSettings.TotalTransactions.ToString(CultureInfo.InvariantCulture));
+                    writer.WriteLine(machineSettings.LastRestock.ToString("o", CultureInfo.InvariantCulture));
                 }
             }
             catch (Exception ex)
@@ -241,36 +333,117 @@ namespace VendingMachine___Badr_Almashrea___30139708
         {
             try
             {
-                string imagePath = Path.Combine(imagesFolder, imageFileName);
-                if (File.Exists(imagePath))
+                foreach (string candidate in EnumerateImageCandidates(imageFileName))
                 {
-                    return Image.FromFile(imagePath);
-                }
-
-                // Try alternative names or extensions
-                string[] possibleNames = {
-                    imageFileName,
-                    imageFileName.ToLower(),
-                    imageFileName.Replace(".jpg", ".png"),
-                    imageFileName.Replace(".png", ".jpg"),
-                    imageFileName.Replace(".jpeg", ".jpg")
-                };
-
-                foreach (string name in possibleNames)
-                {
-                    string altPath = Path.Combine(imagesFolder, name);
-                    if (File.Exists(altPath))
+                    Image loaded = TryLoadImage(candidate);
+                    if (loaded != null)
                     {
-                        return Image.FromFile(altPath);
+                        return loaded;
                     }
                 }
 
-                return CreateProfessionalPlaceholder(Path.GetFileNameWithoutExtension(imageFileName));
+                string placeholderName = string.IsNullOrWhiteSpace(imageFileName)
+                    ? "Product"
+                    : Path.GetFileNameWithoutExtension(imageFileName);
+                return CreateProfessionalPlaceholder(placeholderName);
             }
             catch (Exception ex)
             {
                 LogError($"Image load error for {imageFileName}: {ex.Message}");
-                return CreateProfessionalPlaceholder(Path.GetFileNameWithoutExtension(imageFileName));
+                string placeholderName = string.IsNullOrWhiteSpace(imageFileName)
+                    ? "Product"
+                    : Path.GetFileNameWithoutExtension(imageFileName);
+                return CreateProfessionalPlaceholder(placeholderName);
+            }
+        }
+
+        private IEnumerable<string> GetImageSearchDirectories()
+        {
+            HashSet<string> unique = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            string[] directories =
+            {
+                imagesFolder,
+                Path.Combine(dataDirectory, "Images"),
+                baseDirectory
+            };
+
+            foreach (string directory in directories)
+            {
+                if (string.IsNullOrWhiteSpace(directory)) continue;
+
+                string fullPath;
+                try
+                {
+                    fullPath = Path.GetFullPath(directory);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                if (unique.Add(fullPath))
+                {
+                    yield return fullPath;
+                }
+            }
+        }
+
+        private IEnumerable<string> EnumerateImageCandidates(string imageFileName)
+        {
+            if (string.IsNullOrWhiteSpace(imageFileName)) yield break;
+
+            string fileNameOnly = Path.GetFileName(imageFileName);
+            string baseName = string.IsNullOrEmpty(fileNameOnly)
+                ? imageFileName
+                : fileNameOnly;
+
+            string withoutExtension = Path.GetFileNameWithoutExtension(baseName);
+
+            string[] candidateNames =
+            {
+                baseName,
+                baseName.ToLowerInvariant(),
+                withoutExtension + ".png",
+                withoutExtension + ".jpg",
+                withoutExtension + ".jpeg",
+                withoutExtension + ".webp"
+            };
+
+            HashSet<string> yielded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string directory in GetImageSearchDirectories())
+            {
+                foreach (string candidateName in candidateNames)
+                {
+                    if (string.IsNullOrWhiteSpace(candidateName)) continue;
+
+                    string candidatePath = Path.Combine(directory, candidateName);
+                    if (yielded.Add(candidatePath))
+                    {
+                        yield return candidatePath;
+                    }
+                }
+            }
+        }
+
+        private Image TryLoadImage(string candidatePath)
+        {
+            try
+            {
+                if (!File.Exists(candidatePath))
+                {
+                    return null;
+                }
+
+                using (FileStream stream = new FileStream(candidatePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                using (Image image = Image.FromStream(stream))
+                {
+                    return (Image)image.Clone();
+                }
+            }
+            catch (Exception ex)
+            {
+                LogError($"Image load failure for {candidatePath}: {ex.Message}");
+                return null;
             }
         }
 
@@ -313,8 +486,26 @@ namespace VendingMachine___Badr_Almashrea___30139708
                     if (parts.Length >= 4)
                     {
                         string name = parts[0].Trim();
-                        decimal price = decimal.Parse(parts[1].Trim());
-                        int stock = int.Parse(parts[2].Trim());
+                        string pricePart = parts[1].Trim();
+                        string stockPart = parts[2].Trim();
+
+                        if (!decimal.TryParse(pricePart, NumberStyles.Number, CultureInfo.InvariantCulture, out decimal price))
+                        {
+                            if (!decimal.TryParse(pricePart, NumberStyles.Number, CultureInfo.CurrentCulture, out price))
+                            {
+                                LogError($"Invalid price format in stock file for product '{name}'.");
+                                continue;
+                            }
+                        }
+
+                        if (!int.TryParse(stockPart, NumberStyles.Integer, CultureInfo.InvariantCulture, out int stock))
+                        {
+                            if (!int.TryParse(stockPart, NumberStyles.Integer, CultureInfo.CurrentCulture, out stock))
+                            {
+                                LogError($"Invalid stock format in stock file for product '{name}'.");
+                                continue;
+                            }
+                        }
                         string code = parts[3].Trim();
                         string category = parts.Length > 4 ? parts[4].Trim() : "Beverage";
                         string imagePath = parts.Length > 5 ? parts[5].Trim() : "";
@@ -346,11 +537,20 @@ namespace VendingMachine___Badr_Almashrea___30139708
         {
             try
             {
+                string stockDirectory = Path.GetDirectoryName(stockFile);
+                if (!string.IsNullOrEmpty(stockDirectory))
+                {
+                    Directory.CreateDirectory(stockDirectory);
+                }
+
                 using (StreamWriter writer = new StreamWriter(stockFile))
                 {
                     foreach (Product product in allProducts)
                     {
-                        writer.WriteLine($"{product.Name},{product.Price},{product.Stock},{product.ProductCode},{product.Category},{product.ImagePath}");
+                        string price = product.Price.ToString(CultureInfo.InvariantCulture);
+                        string category = product.Category?.Replace(',', ' ') ?? string.Empty;
+                        string imagePath = product.ImagePath?.Replace(',', ' ') ?? string.Empty;
+                        writer.WriteLine(string.Join(",", product.Name, price, product.Stock.ToString(CultureInfo.InvariantCulture), product.ProductCode, category, imagePath));
                     }
                 }
             }
@@ -539,37 +739,16 @@ namespace VendingMachine___Badr_Almashrea___30139708
 
         private Image LoadCoinImage(string imageFileName)
         {
-            try
+            foreach (string candidate in EnumerateImageCandidates(imageFileName))
             {
-                string imagePath = Path.Combine(imagesFolder, imageFileName);
-                if (File.Exists(imagePath))
+                Image loaded = TryLoadImage(candidate);
+                if (loaded != null)
                 {
-                    return Image.FromFile(imagePath);
+                    return loaded;
                 }
-
-                // Try alternative names
-                string[] possibleNames = {
-                    imageFileName,
-                    imageFileName.ToLower(),
-                    imageFileName.Replace(".webp", ".png"),
-                    imageFileName.Replace(".png", ".webp"),
-                    imageFileName.Replace(".jpg", ".png")
-                };
-
-                foreach (string name in possibleNames)
-                {
-                    string altPath = Path.Combine(imagesFolder, name);
-                    if (File.Exists(altPath))
-                    {
-                        return Image.FromFile(altPath);
-                    }
-                }
-                return null;
             }
-            catch
-            {
-                return null;
-            }
+
+            return null;
         }
 
         private void SetupDragDrop()
@@ -1170,8 +1349,14 @@ namespace VendingMachine___Badr_Almashrea___30139708
                 invoice.AppendLine($"║ Location: {machineSettings.Location,-24} ║");
                 invoice.AppendLine("╚════════════════════════════════════════╝");
 
+                string invoicesDirectory = Path.GetDirectoryName(invoicesFile);
+                if (!string.IsNullOrEmpty(invoicesDirectory))
+                {
+                    Directory.CreateDirectory(invoicesDirectory);
+                }
                 File.AppendAllText(invoicesFile, invoice.ToString() + Environment.NewLine + Environment.NewLine);
 
+                Directory.CreateDirectory(transactionsFolder);
                 string transactionFile = Path.Combine(transactionsFolder, $"{invoiceNumber}.txt");
                 File.WriteAllText(transactionFile, invoice.ToString());
 
@@ -1188,7 +1373,8 @@ namespace VendingMachine___Badr_Almashrea___30139708
             try
             {
                 string logEntry = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} | Invoice | Total: £{totalCost:F2} | Paid: £{amountPaid:F2} | Change: £{change:F2} | Student: {studentNumber}";
-                string logFile = Path.Combine("Logs", $"Transactions_{DateTime.Now:yyyyMMdd}.log");
+                Directory.CreateDirectory(logsFolder);
+                string logFile = Path.Combine(logsFolder, $"Transactions_{DateTime.Now:yyyyMMdd}.log");
                 File.AppendAllText(logFile, logEntry + Environment.NewLine);
             }
             catch (Exception ex)
@@ -1202,7 +1388,8 @@ namespace VendingMachine___Badr_Almashrea___30139708
             try
             {
                 string logEntry = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} | ERROR | {errorMessage}";
-                string logFile = Path.Combine("Logs", $"Errors_{DateTime.Now:yyyyMMdd}.log");
+                Directory.CreateDirectory(logsFolder);
+                string logFile = Path.Combine(logsFolder, $"Errors_{DateTime.Now:yyyyMMdd}.log");
                 File.AppendAllText(logFile, logEntry + Environment.NewLine);
             }
             catch
@@ -1216,7 +1403,8 @@ namespace VendingMachine___Badr_Almashrea___30139708
             try
             {
                 string logEntry = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} | ACTIVITY | {activity}";
-                string logFile = Path.Combine("Logs", $"Activity_{DateTime.Now:yyyyMMdd}.log");
+                Directory.CreateDirectory(logsFolder);
+                string logFile = Path.Combine(logsFolder, $"Activity_{DateTime.Now:yyyyMMdd}.log");
                 File.AppendAllText(logFile, logEntry + Environment.NewLine);
             }
             catch
