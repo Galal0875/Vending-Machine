@@ -1,10 +1,12 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Windows.Forms;
 using VendingMachine;
 
@@ -12,21 +14,30 @@ namespace VendingMachine___Badr_Almashrea___30139708
 {
     public partial class Form1 : Form
     {
-        // Variables to track vending machine state
+        #region Class Variables
         private decimal totalCost = 0;
         private decimal amountPaid = 0;
         private bool inCheckoutMode = false;
-        private string studentNumber = "12345678"; // Change to your student number
+        private string studentNumber = "30139708";
 
-        // List to store selected products
         private List<Product> selectedProducts = new List<Product>();
-
-        // List of all available products
         private List<Product> allProducts = new List<Product>();
+        private VendingMachineSettings machineSettings = new VendingMachineSettings();
 
         // File paths for data persistence
-        private string stockFile = "product_stock.txt";
+        private string stockFile = "Items.txt";
+        private string invoicesFile = "Invoices.txt";
         private string transactionsFolder = "Transactions";
+        private string settingsFile = "MachineSettings.txt";
+        private string imagesFolder = "Images";
+
+        // Colors for UI
+        private Color colorPrimary = Color.FromArgb(0, 100, 180);
+        private Color colorSuccess = Color.FromArgb(0, 150, 0);
+        private Color colorDanger = Color.FromArgb(220, 60, 60);
+        private Color colorWarning = Color.FromArgb(255, 193, 7);
+        private Color colorLight = Color.FromArgb(240, 245, 250);
+        #endregion
 
         public Form1()
         {
@@ -34,86 +45,254 @@ namespace VendingMachine___Badr_Almashrea___30139708
             SetupVendingMachine();
         }
 
+        #region Initialization Methods
         private void SetupVendingMachine()
         {
-            // Set form title with student number
-            this.Text = "Advanced Vending Machine - " + studentNumber;
-            this.Size = new Size(1000, 750);
-            this.StartPosition = FormStartPosition.CenterScreen;
-
-            // Load product stock from file
-            LoadProductStock();
-
-            // Setup the UI
-            SetupProductButtons();
-            SetupCoinButtons();
-            SetupDragDrop();
-
-            // Initial UI state
-            DisableCoinButtons();
-            UpdateDisplay();
-
-            // Ensure transactions folder exists
-            if (!Directory.Exists(transactionsFolder))
+            try
             {
-                Directory.CreateDirectory(transactionsFolder);
+                this.Text = $"Premium Vending Machine - Student: {studentNumber}";
+                this.DoubleBuffered = true;
+                this.WindowState = FormWindowState.Maximized;
+
+                // Create necessary files and directories
+                EnsureDirectoriesExist();
+                EnsureFilesExist();
+
+                LoadMachineSettings();
+                LoadProductStock();
+
+                SetupProductDisplay();
+                SetupCoinButtons();
+                SetupDragDrop();
+                SetupRealTimeUpdates();
+
+                DisableCoinButtons();
+                UpdateDisplay();
+                UpdateStatus("System initialized. Ready to serve! 🚀", false);
+
+                timerDateTime.Start();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to initialize vending machine: {ex.Message}",
+                    "Initialization Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void EnsureDirectoriesExist()
+        {
+            try
+            {
+                if (!Directory.Exists(transactionsFolder))
+                    Directory.CreateDirectory(transactionsFolder);
+                if (!Directory.Exists("Logs"))
+                    Directory.CreateDirectory("Logs");
+                if (!Directory.Exists(imagesFolder))
+                    Directory.CreateDirectory(imagesFolder);
+            }
+            catch (Exception ex)
+            {
+                LogError($"Directory creation failed: {ex.Message}");
+            }
+        }
+
+        private void EnsureFilesExist()
+        {
+            try
+            {
+                // Create Items.txt if it doesn't exist
+                if (!File.Exists(stockFile))
+                {
+                    CreateDefaultItemsFile();
+                }
+
+                // Create Invoices.txt if it doesn't exist
+                if (!File.Exists(invoicesFile))
+                {
+                    File.WriteAllText(invoicesFile, "VENDING MACHINE INVOICES\n" + new string('=', 50) + "\n\n");
+                }
+
+                // Create MachineSettings.txt if it doesn't exist
+                if (!File.Exists(settingsFile))
+                {
+                    SaveMachineSettings();
+                }
+            }
+            catch (Exception ex)
+            {
+                LogError($"File creation error: {ex.Message}");
+            }
+        }
+
+        private void CreateDefaultItemsFile()
+        {
+            try
+            {
+                StringBuilder defaultItems = new StringBuilder();
+                defaultItems.AppendLine("Coca Cola,1.50,10,COKE001,Soft Drink,coke.jpg");
+                defaultItems.AppendLine("Zero Coca Cola,1.50,8,COKE002,Soft Drink,coke_zero.jpg");
+                defaultItems.AppendLine("Pepsi,1.40,12,PEPSI003,Soft Drink,pepsi.jpg");
+                defaultItems.AppendLine("Fanta Orange,1.40,10,FANTA004,Soft Drink,fanta.jpg");
+                defaultItems.AppendLine("Red Bull,2.20,6,REDBULL005,Energy Drink,redbull.jpg");
+                defaultItems.AppendLine("Sprite,1.30,15,SPRITE006,Soft Drink,sprite.jpg");
+                defaultItems.AppendLine("Water,1.00,20,WATER007,Water,water.jpg");
+
+                File.WriteAllText(stockFile, defaultItems.ToString());
+            }
+            catch (Exception ex)
+            {
+                LogError($"Default items file creation error: {ex.Message}");
+            }
+        }
+
+        private void SetupRealTimeUpdates()
+        {
+            UpdateDateTimeDisplay();
+        }
+        #endregion
+
+        #region Data Management Methods
+        private void LoadMachineSettings()
+        {
+            try
+            {
+                if (File.Exists(settingsFile))
+                {
+                    string[] lines = File.ReadAllLines(settingsFile);
+                    if (lines.Length >= 5)
+                    {
+                        machineSettings.MachineId = lines[0];
+                        machineSettings.Location = lines[1];
+                        machineSettings.TotalRevenue = decimal.Parse(lines[2]);
+                        machineSettings.TotalTransactions = int.Parse(lines[3]);
+                        machineSettings.LastRestock = DateTime.Parse(lines[4]);
+                    }
+                }
+                else
+                {
+                    // Create default settings
+                    machineSettings.MachineId = "VM-001";
+                    machineSettings.Location = "University Campus";
+                    machineSettings.TotalRevenue = 0;
+                    machineSettings.TotalTransactions = 0;
+                    machineSettings.LastRestock = DateTime.Now;
+                    SaveMachineSettings();
+                }
+            }
+            catch (Exception ex)
+            {
+                LogError($"Settings load error: {ex.Message}");
+            }
+        }
+
+        private void SaveMachineSettings()
+        {
+            try
+            {
+                using (StreamWriter writer = new StreamWriter(settingsFile))
+                {
+                    writer.WriteLine(machineSettings.MachineId);
+                    writer.WriteLine(machineSettings.Location);
+                    writer.WriteLine(machineSettings.TotalRevenue);
+                    writer.WriteLine(machineSettings.TotalTransactions);
+                    writer.WriteLine(machineSettings.LastRestock);
+                }
+            }
+            catch (Exception ex)
+            {
+                LogError($"Settings save error: {ex.Message}");
             }
         }
 
         private void LoadProductStock()
         {
-            // Check if stock file exists
-            if (File.Exists(stockFile))
+            try
             {
-                // Load stock from file
-                LoadStockFromFile();
+                if (File.Exists(stockFile))
+                {
+                    LoadStockFromFile();
+                }
+                else
+                {
+                    CreateDefaultItemsFile();
+                    LoadStockFromFile();
+                }
             }
-            else
+            catch (Exception ex)
             {
-                // Create default products with initial stock
+                ShowErrorMessage($"Stock load error: {ex.Message}");
                 CreateDefaultProducts();
-                SaveStockToFile();
             }
         }
 
         private void CreateDefaultProducts()
         {
             allProducts.Clear();
-
-            // Load images from files
-            string imagePath = "Images/";
-
-            allProducts.Add(new Product("Coca Cola", 1.50m, 10, LoadImage(imagePath + "coke.jpg"), "COKE001"));
-            allProducts.Add(new Product("Zero Coca Cola", 1.50m, 8, LoadImage(imagePath + "coke_zero.jpg"), "COKE002"));
-            allProducts.Add(new Product("Pepsi", 1.40m, 12, LoadImage(imagePath + "pepsi.jpg"), "PEPSI003"));
-            allProducts.Add(new Product("Fanta Orange", 1.40m, 10, LoadImage(imagePath + "fanta.jpg"), "FANTA004"));
-            allProducts.Add(new Product("Red Bull", 2.20m, 6, LoadImage(imagePath + "redbull.jpg"), "REDBULL005"));
-            allProducts.Add(new Product("Sprite", 1.30m, 15, LoadImage(imagePath + "sprite.jpg"), "SPRITE006"));
-            allProducts.Add(new Product("Water", 1.00m, 20, LoadImage(imagePath + "water.jpg"), "WATER007"));
+            allProducts.Add(new Product("Coca Cola", 1.50m, 10, LoadProductImage("coke.jpg"), "COKE001", "coke.jpg", "Soft Drink"));
+            allProducts.Add(new Product("Zero Coca Cola", 1.50m, 8, LoadProductImage("coke_zero.jpg"), "COKE002", "coke_zero.jpg", "Soft Drink"));
+            allProducts.Add(new Product("Pepsi", 1.40m, 12, LoadProductImage("pepsi.jpg"), "PEPSI003", "pepsi.jpg", "Soft Drink"));
+            allProducts.Add(new Product("Fanta Orange", 1.40m, 10, LoadProductImage("fanta.jpg"), "FANTA004", "fanta.jpg", "Soft Drink"));
+            allProducts.Add(new Product("Red Bull", 2.20m, 6, LoadProductImage("redbull.jpg"), "REDBULL005", "redbull.jpg", "Energy Drink"));
+            allProducts.Add(new Product("Sprite", 1.30m, 15, LoadProductImage("sprite.jpg"), "SPRITE006", "sprite.jpg", "Soft Drink"));
+            allProducts.Add(new Product("Water", 1.00m, 20, LoadProductImage("water.jpg"), "WATER007", "water.jpg", "Water"));
         }
 
-        private Image LoadImage(string filePath)
+        private Image LoadProductImage(string imageFileName)
         {
-            if (File.Exists(filePath))
+            try
             {
-                return Image.FromFile(filePath);
+                string imagePath = Path.Combine(imagesFolder, imageFileName);
+                if (File.Exists(imagePath))
+                {
+                    return Image.FromFile(imagePath);
+                }
+
+                // Try alternative names or extensions
+                string[] possibleNames = {
+                    imageFileName,
+                    imageFileName.ToLower(),
+                    imageFileName.Replace(".jpg", ".png"),
+                    imageFileName.Replace(".png", ".jpg"),
+                    imageFileName.Replace(".jpeg", ".jpg")
+                };
+
+                foreach (string name in possibleNames)
+                {
+                    string altPath = Path.Combine(imagesFolder, name);
+                    if (File.Exists(altPath))
+                    {
+                        return Image.FromFile(altPath);
+                    }
+                }
+
+                return CreateProfessionalPlaceholder(Path.GetFileNameWithoutExtension(imageFileName));
             }
-            else
+            catch (Exception ex)
             {
-                // Return placeholder if image not found
-                return CreatePlaceholderImage();
+                LogError($"Image load error for {imageFileName}: {ex.Message}");
+                return CreateProfessionalPlaceholder(Path.GetFileNameWithoutExtension(imageFileName));
             }
         }
 
-        private Image CreatePlaceholderImage()
+        private Image CreateProfessionalPlaceholder(string productName)
         {
-            // Create a simple placeholder image
-            Bitmap bmp = new Bitmap(80, 80);
+            Bitmap bmp = new Bitmap(120, 120);
             using (Graphics g = Graphics.FromImage(bmp))
+            using (var brush = new SolidBrush(colorLight))
+            using (var textBrush = new SolidBrush(Color.Gray))
+            using (var font = new Font("Segoe UI", 8, FontStyle.Bold))
             {
-                g.Clear(Color.LightBlue);
-                g.DrawRectangle(Pens.Black, 0, 0, 79, 79);
-                g.DrawString("Product", new Font("Arial", 8), Brushes.Black, 10, 35);
+                g.Clear(Color.White);
+                g.FillRectangle(brush, 0, 0, bmp.Width, bmp.Height);
+                g.DrawRectangle(new Pen(Color.LightGray, 2), 1, 1, bmp.Width - 3, bmp.Height - 3);
+
+                string displayText = productName.Length > 12 ? productName.Substring(0, 12) + "..." : productName;
+                StringFormat format = new StringFormat();
+                format.Alignment = StringAlignment.Center;
+                format.LineAlignment = StringAlignment.Center;
+
+                g.DrawString(displayText, font, textBrush,
+                    new RectangleF(0, 0, bmp.Width, bmp.Height), format);
             }
             return bmp;
         }
@@ -127,21 +306,38 @@ namespace VendingMachine___Badr_Almashrea___30139708
 
                 foreach (string line in lines)
                 {
-                    string[] parts = line.Split(',');
-                    if (parts.Length == 5)
-                    {
-                        string name = parts[0];
-                        decimal price = decimal.Parse(parts[1]);
-                        int stock = int.Parse(parts[2]);
-                        string code = parts[3];
+                    if (string.IsNullOrWhiteSpace(line)) continue;
+                    if (line.StartsWith("//") || line.StartsWith("#")) continue;
 
-                        allProducts.Add(new Product(name, price, stock, CreatePlaceholderImage(), code));
+                    string[] parts = line.Split(',');
+                    if (parts.Length >= 4)
+                    {
+                        string name = parts[0].Trim();
+                        decimal price = decimal.Parse(parts[1].Trim());
+                        int stock = int.Parse(parts[2].Trim());
+                        string code = parts[3].Trim();
+                        string category = parts.Length > 4 ? parts[4].Trim() : "Beverage";
+                        string imagePath = parts.Length > 5 ? parts[5].Trim() : "";
+
+                        Image productImage = CreateProfessionalPlaceholder(name);
+                        if (!string.IsNullOrEmpty(imagePath))
+                        {
+                            productImage = LoadProductImage(imagePath);
+                        }
+
+                        allProducts.Add(new Product(name, price, stock, productImage, code, imagePath, category));
                     }
+                }
+
+                if (allProducts.Count == 0)
+                {
+                    CreateDefaultProducts();
+                    SaveStockToFile();
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error loading stock: {ex.Message}. Using default products.");
+                LogError($"Stock file load error: {ex.Message}");
                 CreateDefaultProducts();
             }
         }
@@ -154,381 +350,365 @@ namespace VendingMachine___Badr_Almashrea___30139708
                 {
                     foreach (Product product in allProducts)
                     {
-                        writer.WriteLine($"{product.Name},{product.Price},{product.Stock},{product.ProductCode},0");
+                        writer.WriteLine($"{product.Name},{product.Price},{product.Stock},{product.ProductCode},{product.Category},{product.ImagePath}");
                     }
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error saving stock: {ex.Message}");
+                LogError($"Stock save error: {ex.Message}");
+                ShowErrorMessage("Failed to save product stock!");
             }
         }
+        #endregion
 
-        private void SetupProductButtons()
+        #region UI Setup Methods
+        private void SetupProductDisplay()
         {
-            // Clear existing buttons
-            panelProducts.Controls.Clear();
-
-            int buttonWidth = 140;
-            int buttonHeight = 120;
-            int spacing = 15;
-            int x = spacing;
-            int y = spacing;
-
-            // Create products with proper display
-            allProducts.Clear();
-
-            // Create products - using placeholder images for now
-            Image placeholder = CreatePlaceholderImage();
-
-            allProducts.Add(new Product("Coca Cola", 1.50m, 10, placeholder, "COKE001"));
-            allProducts.Add(new Product("Zero Coca Cola", 1.50m, 8, placeholder, "COKE002"));
-            allProducts.Add(new Product("Pepsi", 1.40m, 12, placeholder, "PEPSI003"));
-            allProducts.Add(new Product("Fanta Orange", 1.40m, 10, placeholder, "FANTA004"));
-            allProducts.Add(new Product("Red Bull", 2.20m, 6, placeholder, "REDBULL005"));
-            allProducts.Add(new Product("Sprite", 1.30m, 15, placeholder, "SPRITE006"));
-            allProducts.Add(new Product("Water", 1.00m, 20, placeholder, "WATER007"));
+            flowLayoutProducts.Controls.Clear();
+            flowLayoutProducts.AutoScroll = true;
+            flowLayoutProducts.WrapContents = true;
 
             foreach (Product product in allProducts)
             {
-                // Create main product container panel
-                Panel productPanel = new Panel();
-                productPanel.Size = new Size(buttonWidth, buttonHeight);
-                productPanel.Location = new Point(x, y);
-                productPanel.BorderStyle = BorderStyle.FixedSingle;
-                productPanel.BackColor = Color.White;
-                productPanel.Tag = product.ProductCode;
-
-                // Create product image
-                PictureBox picProduct = new PictureBox();
-                picProduct.Size = new Size(80, 60);
-                picProduct.Location = new Point(30, 10);
-                picProduct.SizeMode = PictureBoxSizeMode.StretchImage;
-                picProduct.Image = product.ProductImage;
-                picProduct.BackColor = Color.Transparent;
-
-                // Create product name label
-                Label lblName = new Label();
-                lblName.Text = product.Name;
-                lblName.Location = new Point(5, 75);
-                lblName.Size = new Size(buttonWidth - 10, 20);
-                lblName.TextAlign = ContentAlignment.MiddleCenter;
-                lblName.Font = new Font("Arial", 9, FontStyle.Bold);
-                lblName.BackColor = Color.Transparent;
-
-                // Create product price label
-                Label lblPrice = new Label();
-                lblPrice.Text = $"�{product.Price:F2}";
-                lblPrice.Location = new Point(5, 95);
-                lblPrice.Size = new Size(buttonWidth - 10, 20);
-                lblPrice.TextAlign = ContentAlignment.MiddleCenter;
-                lblPrice.Font = new Font("Arial", 9, FontStyle.Regular);
-                lblPrice.ForeColor = Color.DarkGreen;
-                lblPrice.BackColor = Color.Transparent;
-
-                // Create select button (invisible overlay)
-                Button btnSelect = new Button();
-                btnSelect.Size = new Size(buttonWidth, buttonHeight);
-                btnSelect.Location = new Point(0, 0);
-                btnSelect.FlatStyle = FlatStyle.Flat;
-                btnSelect.BackColor = Color.Transparent;
-                btnSelect.FlatAppearance.BorderSize = 0;
-                btnSelect.FlatAppearance.MouseOverBackColor = Color.FromArgb(30, 0, 0, 255);
-                btnSelect.FlatAppearance.MouseDownBackColor = Color.FromArgb(50, 0, 0, 255);
-                btnSelect.Tag = product.ProductCode;
-                btnSelect.Click += ProductButton_Click;
-
-                // Add controls to product panel
-                productPanel.Controls.Add(picProduct);
-                productPanel.Controls.Add(lblName);
-                productPanel.Controls.Add(lblPrice);
-                productPanel.Controls.Add(btnSelect);
-
-                // Add product panel to main panel
-                panelProducts.Controls.Add(productPanel);
-
-                // Update position for next product
-                x += buttonWidth + spacing;
-                if (x + buttonWidth > panelProducts.Width - spacing)
-                {
-                    x = spacing;
-                    y += buttonHeight + spacing;
-                }
+                Panel productCard = CreateProductCard(product);
+                flowLayoutProducts.Controls.Add(productCard);
             }
+        }
+
+        private Panel CreateProductCard(Product product)
+        {
+            Panel card = new Panel
+            {
+                Size = new Size(180, 220),
+                BorderStyle = BorderStyle.FixedSingle,
+                BackColor = Color.White,
+                Margin = new Padding(10),
+                Tag = product.ProductCode,
+                Cursor = Cursors.Hand
+            };
+
+            PictureBox picProduct = new PictureBox
+            {
+                Size = new Size(140, 100),
+                Location = new Point(20, 15),
+                SizeMode = PictureBoxSizeMode.Zoom,
+                Image = product.ProductImage,
+                BackColor = Color.Transparent,
+                Tag = product.ProductCode
+            };
+
+            Label lblName = new Label
+            {
+                Text = product.Name,
+                Location = new Point(10, 125),
+                Size = new Size(160, 20),
+                TextAlign = ContentAlignment.MiddleCenter,
+                Font = new Font("Segoe UI", 9, FontStyle.Bold),
+                ForeColor = Color.FromArgb(51, 51, 51),
+                Tag = product.ProductCode
+            };
+
+            Label lblPrice = new Label
+            {
+                Text = $"£{product.Price:F2}",
+                Location = new Point(10, 145),
+                Size = new Size(160, 20),
+                TextAlign = ContentAlignment.MiddleCenter,
+                Font = new Font("Segoe UI", 11, FontStyle.Bold),
+                ForeColor = colorSuccess,
+                Tag = product.ProductCode
+            };
+
+            Label lblStock = new Label
+            {
+                Text = product.Stock > 0 ? $"Stock: {product.Stock}" : "OUT OF STOCK",
+                Location = new Point(10, 170),
+                Size = new Size(160, 20),
+                TextAlign = ContentAlignment.MiddleCenter,
+                Font = new Font("Segoe UI", 8, FontStyle.Regular),
+                ForeColor = product.Stock > 0 ? Color.Gray : colorDanger,
+                Tag = product.ProductCode
+            };
+
+            Button btnAdd = new Button
+            {
+                Text = "➕ Add to Cart",
+                Size = new Size(160, 30),
+                Location = new Point(10, 190),
+                FlatStyle = FlatStyle.Flat,
+                BackColor = product.Stock > 0 ? colorPrimary : Color.LightGray,
+                ForeColor = Color.White,
+                Font = new Font("Segoe UI", 8, FontStyle.Bold),
+                Enabled = product.Stock > 0,
+                Tag = product.ProductCode
+            };
+            btnAdd.FlatAppearance.BorderSize = 0;
+            btnAdd.Click += ProductAddButton_Click;
+
+            card.MouseEnter += (s, e) => { if (!inCheckoutMode) card.BackColor = Color.FromArgb(245, 245, 245); };
+            card.MouseLeave += (s, e) => { card.BackColor = Color.White; };
+
+            card.Controls.AddRange(new Control[] { picProduct, lblName, lblPrice, lblStock, btnAdd });
+            return card;
         }
 
         private void SetupCoinButtons()
         {
-            // Define coins and notes with images
+            panelCoins.Controls.Clear();
+            panelCoins.AutoScroll = true;
+
             var payments = new[]
             {
-        new { Value = 0.10m, Text = "10p", ImageName = "coin10p" },
-        new { Value = 0.20m, Text = "20p", ImageName = "coin20p" },
-        new { Value = 0.50m, Text = "50p", ImageName = "coin50p" },
-        new { Value = 1.00m, Text = "�1", ImageName = "coin1" },
-        new { Value = 2.00m, Text = "�2", ImageName = "coin2" },
-        new { Value = 5.00m, Text = "�5", ImageName = "note5" },
-        new { Value = 10.00m, Text = "�10", ImageName = "note10" }
-    };
+                new { Value = 0.10m, Text = "10p", Type = "Coin", ImageName = "coin10p.webp" },
+                new { Value = 0.20m, Text = "20p", Type = "Coin", ImageName = "coin20p.webp" },
+                new { Value = 0.50m, Text = "50p", Type = "Coin", ImageName = "coin50p.webp" },
+                new { Value = 1.00m, Text = "£1", Type = "Coin", ImageName = "coin1.png" },
+                new { Value = 2.00m, Text = "£2", Type = "Coin", ImageName = "coin2.webp" },
+                new { Value = 5.00m, Text = "£5", Type = "Note", ImageName = "note5.png" },
+                new { Value = 10.00m, Text = "£10", Type = "Note", ImageName = "note10.jpg" }
+            };
 
-            int buttonWidth = 80;
-            int buttonHeight = 80;
+            int buttonSize = 70;
             int spacing = 10;
             int x = spacing;
             int y = spacing;
 
             foreach (var payment in payments)
             {
-                // Create coin/note panel
-                Panel paymentPanel = new Panel();
-                paymentPanel.Size = new Size(buttonWidth, buttonHeight);
+                Panel paymentPanel = CreatePaymentPanel(payment.Value, payment.Text, payment.Type, payment.ImageName, buttonSize);
                 paymentPanel.Location = new Point(x, y);
-                paymentPanel.BorderStyle = BorderStyle.FixedSingle;
-                paymentPanel.BackColor = Color.LightYellow;
-                paymentPanel.Tag = payment.Value;
-
-                // Create payment image
-                PictureBox picPayment = new PictureBox();
-                picPayment.Size = new Size(50, 50);
-                picPayment.Location = new Point(15, 5);
-                picPayment.SizeMode = PictureBoxSizeMode.StretchImage;
-                picPayment.Image = LoadPaymentImage(payment.ImageName);
-                picPayment.BackColor = Color.Transparent;
-
-                // Create payment value label
-                Label lblValue = new Label();
-                lblValue.Text = payment.Text;
-                lblValue.Location = new Point(5, 60);
-                lblValue.Size = new Size(buttonWidth - 10, 15);
-                lblValue.TextAlign = ContentAlignment.MiddleCenter;
-                lblValue.Font = new Font("Arial", 8, FontStyle.Bold);
-                lblValue.BackColor = Color.Transparent;
-
-                // Create invisible drag button
-                Button btnDrag = new Button();
-                btnDrag.Size = new Size(buttonWidth, buttonHeight);
-                btnDrag.Location = new Point(0, 0);
-                btnDrag.FlatStyle = FlatStyle.Flat;
-                btnDrag.BackColor = Color.Transparent;
-                btnDrag.FlatAppearance.BorderSize = 0;
-                btnDrag.FlatAppearance.MouseOverBackColor = Color.FromArgb(30, 255, 255, 0);
-                btnDrag.FlatAppearance.MouseDownBackColor = Color.FromArgb(50, 255, 255, 0);
-                btnDrag.Tag = payment.Value;
-                btnDrag.MouseDown += CoinButton_MouseDown;
-
-                paymentPanel.Controls.Add(picPayment);
-                paymentPanel.Controls.Add(lblValue);
-                paymentPanel.Controls.Add(btnDrag);
-
                 panelCoins.Controls.Add(paymentPanel);
 
-                y += buttonHeight + spacing;
+                x += buttonSize + spacing;
+                if (x + buttonSize > panelCoins.Width - spacing)
+                {
+                    x = spacing;
+                    y += buttonSize + spacing;
+                }
             }
         }
 
-        private Image LoadPaymentImage(string imageName)
+        private Panel CreatePaymentPanel(decimal value, string text, string type, string imageName, int size)
         {
-            // Try to load from resources first
+            Panel panel = new Panel
+            {
+                Size = new Size(size, size),
+                BorderStyle = BorderStyle.FixedSingle,
+                BackColor = type == "Note" ? Color.LightGreen : Color.Silver,
+                Tag = value,
+                Cursor = Cursors.Hand
+            };
+
+            Image coinImage = LoadCoinImage(imageName);
+            if (coinImage != null)
+            {
+                PictureBox picCoin = new PictureBox
+                {
+                    Size = new Size(size - 10, size - 10),
+                    Location = new Point(5, 5),
+                    SizeMode = PictureBoxSizeMode.Zoom,
+                    Image = coinImage,
+                    BackColor = Color.Transparent,
+                    Tag = value
+                };
+                picCoin.MouseDown += CoinPicture_MouseDown;
+                panel.Controls.Add(picCoin);
+            }
+            else
+            {
+                Label lblValue = new Label
+                {
+                    Text = text,
+                    Size = new Size(size, size),
+                    TextAlign = ContentAlignment.MiddleCenter,
+                    Font = new Font("Segoe UI", 9, FontStyle.Bold),
+                    ForeColor = Color.Black,
+                    BackColor = Color.Transparent,
+                    Tag = value
+                };
+                lblValue.MouseDown += CoinLabel_MouseDown;
+                panel.Controls.Add(lblValue);
+            }
+
+            panel.MouseEnter += (s, e) => { if (inCheckoutMode) panel.BackColor = ControlPaint.Light(panel.BackColor); };
+            panel.MouseLeave += (s, e) => { panel.BackColor = type == "Note" ? Color.LightGreen : Color.Silver; };
+
+            return panel;
+        }
+
+        private Image LoadCoinImage(string imageFileName)
+        {
             try
             {
-                var resourceManager = new System.Resources.ResourceManager("VendingMachine.Properties.Resources", typeof(Form1).Assembly);
-                return (Image)resourceManager.GetObject(imageName);
+                string imagePath = Path.Combine(imagesFolder, imageFileName);
+                if (File.Exists(imagePath))
+                {
+                    return Image.FromFile(imagePath);
+                }
+
+                // Try alternative names
+                string[] possibleNames = {
+                    imageFileName,
+                    imageFileName.ToLower(),
+                    imageFileName.Replace(".webp", ".png"),
+                    imageFileName.Replace(".png", ".webp"),
+                    imageFileName.Replace(".jpg", ".png")
+                };
+
+                foreach (string name in possibleNames)
+                {
+                    string altPath = Path.Combine(imagesFolder, name);
+                    if (File.Exists(altPath))
+                    {
+                        return Image.FromFile(altPath);
+                    }
+                }
+                return null;
             }
             catch
             {
-                // Try to load from file
-                string filePath = $"Images/{imageName}.jpg";
-                if (File.Exists(filePath))
-                {
-                    return Image.FromFile(filePath);
-                }
-                else
-                {
-                    // Create placeholder for payment
-                    return CreatePaymentPlaceholder(imageName);
-                }
+                return null;
             }
         }
-
-        private Image CreatePaymentPlaceholder(string paymentType)
-        {
-            Bitmap bmp = new Bitmap(50, 50);
-            using (Graphics g = Graphics.FromImage(bmp))
-            {
-                if (paymentType.Contains("note"))
-                {
-                    g.Clear(Color.LightGreen);
-                }
-                else
-                {
-                    g.Clear(Color.Silver);
-                }
-
-                g.DrawRectangle(Pens.Black, 0, 0, 49, 49);
-
-                string text = paymentType.Replace("coin", "").Replace("note", "");
-                if (paymentType.Contains("note"))
-                {
-                    text = "�" + text;
-                }
-                else
-                {
-                    text = text + "p";
-                }
-
-                g.DrawString(text, new Font("Arial", 7), Brushes.Black, 5, 15);
-            }
-            return bmp;
-        }
-
-
 
         private void SetupDragDrop()
         {
-            // Setup coin slot
             picCoinSlot.AllowDrop = true;
             picCoinSlot.DragEnter += CoinSlot_DragEnter;
             picCoinSlot.DragDrop += CoinSlot_DragDrop;
-            picCoinSlot.BackColor = Color.Gray;
-            picCoinSlot.BorderStyle = BorderStyle.Fixed3D;
+            picCoinSlot.Paint += CoinSlot_Paint;
 
-            // Setup trash for removing items
             picTrash.AllowDrop = true;
             picTrash.DragEnter += Trash_DragEnter;
             picTrash.DragDrop += Trash_DragDrop;
-            picTrash.BackColor = Color.Red;
-            picTrash.BorderStyle = BorderStyle.FixedSingle;
+            picTrash.Paint += Trash_Paint;
 
-            // Setup listbox for dragging items out
             listBoxProducts.MouseDown += ListBoxProducts_MouseDown;
         }
 
-        private void DisableCoinButtons()
+        private void CoinSlot_Paint(object sender, PaintEventArgs e)
         {
-            foreach (Control control in panelCoins.Controls)
+            Graphics g = e.Graphics;
+            Rectangle rect = picCoinSlot.ClientRectangle;
+
+            using (LinearGradientBrush brush = new LinearGradientBrush(
+                rect, Color.DimGray, Color.Black, LinearGradientMode.Vertical))
             {
-                if (control is Button)
-                    control.Enabled = false;
+                g.FillRectangle(brush, rect);
+            }
+
+            Rectangle slotRect = new Rectangle(rect.Width / 4, 5, rect.Width / 2, rect.Height - 10);
+            using (SolidBrush slotBrush = new SolidBrush(Color.FromArgb(100, 50, 50, 50)))
+            {
+                g.FillRectangle(slotBrush, slotRect);
+            }
+
+            g.DrawRectangle(new Pen(Color.Silver, 2), rect);
+
+            // Draw text
+            using (Font font = new Font("Segoe UI", 8, FontStyle.Bold))
+            using (SolidBrush textBrush = new SolidBrush(Color.White))
+            {
+                StringFormat format = new StringFormat();
+                format.Alignment = StringAlignment.Center;
+                format.LineAlignment = StringAlignment.Center;
+                g.DrawString("DROP\nCOINS\nHERE", font, textBrush, rect, format);
             }
         }
 
-        private void EnableCoinButtons()
+        private void Trash_Paint(object sender, PaintEventArgs e)
         {
-            foreach (Control control in panelCoins.Controls)
+            Graphics g = e.Graphics;
+            Rectangle rect = picTrash.ClientRectangle;
+
+            using (SolidBrush brush = new SolidBrush(colorDanger))
             {
-                if (control is Button)
-                    control.Enabled = true;
+                g.FillRectangle(brush, rect);
+            }
+
+            g.DrawRectangle(new Pen(Color.DarkRed, 2), rect);
+
+            // Draw trash icon
+            using (Font font = new Font("Segoe UI", 20, FontStyle.Bold))
+            using (SolidBrush textBrush = new SolidBrush(Color.White))
+            {
+                StringFormat format = new StringFormat();
+                format.Alignment = StringAlignment.Center;
+                format.LineAlignment = StringAlignment.Center;
+                g.DrawString("🗑️", font, textBrush, rect, format);
             }
         }
+        #endregion
 
-        private void ProductButton_Click(object sender, EventArgs e)
+        #region Event Handlers - Core Functionality
+        private void ProductAddButton_Click(object sender, EventArgs e)
         {
+            Button button = (Button)sender;
+            string productCode = (string)button.Tag;
+
             if (inCheckoutMode)
             {
-                MessageBox.Show("Please complete or cancel the current payment before selecting more products.", "Checkout in Progress");
+                ShowWarningMessage("Please complete or cancel the current payment before adding more items.");
                 return;
             }
 
-            Button clickedButton = (Button)sender;
-            string productCode = (string)clickedButton.Tag;
-
             Product selectedProduct = allProducts.FirstOrDefault(p => p.ProductCode == productCode);
-
-            if (selectedProduct != null)
+            if (selectedProduct == null)
             {
-                if (selectedProduct.Stock > 0)
-                {
-                    selectedProducts.Add(selectedProduct);
-                    UpdateDisplay();
-                }
-                else
-                {
-                    MessageBox.Show($"Sorry, {selectedProduct.Name} is out of stock!", "Out of Stock");
-                }
-            }
-        }
-
-        private void UpdateDisplay()
-        {
-            // Update listbox with grouped products
-            listBoxProducts.Items.Clear();
-
-            var groupedProducts = selectedProducts
-                .GroupBy(p => p.ProductCode)
-                .Select(g => new
-                {
-                    Product = g.First(),
-                    Quantity = g.Count(),
-                    Subtotal = g.First().Price * g.Count()
-                });
-
-            foreach (var group in groupedProducts)
-            {
-                string displayText;
-                if (group.Quantity > 1)
-                {
-                    displayText = $"{group.Product.Name} x{group.Quantity} - �{group.Subtotal:F2}";
-                }
-                else
-                {
-                    displayText = $"{group.Product.Name} - �{group.Product.Price:F2}";
-                }
-                listBoxProducts.Items.Add(displayText);
+                ShowErrorMessage("Product not found!");
+                return;
             }
 
-            // Update total
-            totalCost = selectedProducts.Sum(p => p.Price);
-            lblTotal.Text = $"Total: �{totalCost:F2}";
-
-            // Update stock displays
-            UpdateStockDisplays();
-        }
-
-        private void UpdateStockDisplays()
-        {
-            foreach (Product product in allProducts)
+            if (selectedProduct.Stock <= 0)
             {
-                // Find the stock label for this product
-                foreach (Control control in panelProducts.Controls)
-                {
-                    if (control is Label label && label.Name == "lblStock_" + product.ProductCode)
-                    {
-                        label.Text = $"Stock: {product.Stock}";
-                        label.ForeColor = product.Stock > 0 ? Color.DarkGreen : Color.Red;
-                        break;
-                    }
-                }
-
-                // Enable/disable product button based on stock
-                foreach (Control control in panelProducts.Controls)
-                {
-                    if (control is Button button && button.Tag?.ToString() == product.ProductCode)
-                    {
-                        button.Enabled = product.Stock > 0 && !inCheckoutMode;
-                        break;
-                    }
-                }
+                ShowWarningMessage($"Sorry, {selectedProduct.Name} is out of stock! ❌");
+                UpdateStockDisplays();
+                return;
             }
+
+            int currentQuantity = selectedProducts.Count(p => p.ProductCode == productCode);
+            if (currentQuantity >= selectedProduct.Stock)
+            {
+                ShowWarningMessage($"Cannot add more {selectedProduct.Name}. Only {selectedProduct.Stock} available in stock.");
+                return;
+            }
+
+            selectedProducts.Add(selectedProduct);
+            UpdateDisplay();
+            UpdateStatus($"Added {selectedProduct.Name} to cart. 🛒", false);
+            AnimateButton(button);
         }
 
         private void btnCheckout_Click(object sender, EventArgs e)
         {
             if (selectedProducts.Count == 0)
             {
-                MessageBox.Show("Please select at least one product before checking out.", "No Products Selected");
+                ShowWarningMessage("Your cart is empty! Please add items before checkout. 🛒");
                 return;
             }
 
-            // Check if all products are still in stock
-            var outOfStockProducts = selectedProducts
-                .GroupBy(p => p.ProductCode)
-                .Where(g => g.First().Stock < g.Count())
-                .Select(g => g.First().Name)
-                .ToList();
-
-            if (outOfStockProducts.Any())
+            StringBuilder stockIssues = new StringBuilder();
+            foreach (var productGroup in selectedProducts.GroupBy(p => p.ProductCode))
             {
-                MessageBox.Show($"The following products are no longer available in the requested quantity: {string.Join(", ", outOfStockProducts)}", "Stock Issue");
+                Product product = allProducts.First(p => p.ProductCode == productGroup.Key);
+                int requestedQuantity = productGroup.Count();
+
+                if (product.Stock < requestedQuantity)
+                {
+                    stockIssues.AppendLine($"• {product.Name}: Requested {requestedQuantity}, Available {product.Stock}");
+                }
+            }
+
+            if (stockIssues.Length > 0)
+            {
+                ShowWarningMessage($"Stock issues detected:\n{stockIssues}\nPlease adjust your order.");
+                return;
+            }
+
+            if (totalCost <= 0)
+            {
+                ShowErrorMessage("Invalid order total. Please reselect items.");
                 return;
             }
 
@@ -540,76 +720,83 @@ namespace VendingMachine___Badr_Almashrea___30139708
             inCheckoutMode = true;
             amountPaid = 0;
 
-            // Disable all product buttons
-            foreach (Control control in panelProducts.Controls)
-            {
-                if (control is Button)
-                    control.Enabled = false;
-            }
-
-            // Enable coin buttons
+            UpdateProductCardsState(false);
             EnableCoinButtons();
-
             btnCheckout.Enabled = false;
+            btnCancel.Enabled = true;
 
-            MessageBox.Show("Please drag coins/notes to the coin slot to make payment.", "Checkout Started");
+            progressPayment.Visible = true;
+            progressPayment.Value = 0;
+            UpdatePaymentStatus();
+
+            UpdateStatus($"Checkout started. Total: £{totalCost:F2}. Please make payment. 💳", false);
         }
 
         private void btnCancel_Click(object sender, EventArgs e)
         {
             if (selectedProducts.Count == 0 && !inCheckoutMode)
             {
-                MessageBox.Show("There is no active order to cancel.", "No Order");
+                ShowInformationMessage("No active order to cancel.");
                 return;
             }
 
             DialogResult result = MessageBox.Show(
-                "Are you sure you want to cancel this order? All selected items will be removed.",
-                "Confirm Cancellation",
+                "Are you sure you want to cancel this order?\n\nAll selected items will be removed from your cart.",
+                "Confirm Order Cancellation",
                 MessageBoxButtons.YesNo,
-                MessageBoxIcon.Question);
+                MessageBoxIcon.Question,
+                MessageBoxDefaultButton.Button2);
 
             if (result == DialogResult.Yes)
             {
                 ResetOrder();
+                UpdateStatus("Order cancelled successfully. ✅", false);
             }
         }
 
         private void ResetOrder()
         {
-            // Return products to stock (if they were deducted)
-            foreach (var product in selectedProducts)
-            {
-                // Stock wasn't actually deducted until payment, so no need to return
-            }
-
-            // Reset all variables
             selectedProducts.Clear();
             totalCost = 0;
             amountPaid = 0;
             inCheckoutMode = false;
 
-            // Update UI
             UpdateDisplay();
-
-            // Re-enable product buttons (for in-stock items)
-            UpdateStockDisplays();
-
-            // Disable coin buttons
+            UpdateProductCardsState(true);
             DisableCoinButtons();
-
             btnCheckout.Enabled = true;
+            btnCancel.Enabled = true;
+            progressPayment.Visible = false;
 
-            MessageBox.Show("Order has been cancelled.", "Order Cancelled");
+            UpdateStatus("Order reset. Ready for new selection. 🆕", false);
+        }
+        #endregion
+
+        #region Drag and Drop Handlers
+        private void CoinLabel_MouseDown(object sender, MouseEventArgs e)
+        {
+            if (!inCheckoutMode)
+            {
+                ShowWarningMessage("Please click checkout first before making payment.");
+                return;
+            }
+
+            Label label = (Label)sender;
+            decimal coinValue = (decimal)label.Tag;
+            label.DoDragDrop(coinValue, DragDropEffects.Copy);
         }
 
-        // Drag and Drop Events for Coins
-        private void CoinButton_MouseDown(object sender, MouseEventArgs e)
+        private void CoinPicture_MouseDown(object sender, MouseEventArgs e)
         {
-            if (!inCheckoutMode) return;
+            if (!inCheckoutMode)
+            {
+                ShowWarningMessage("Please click checkout first before making payment.");
+                return;
+            }
 
-            Button coinButton = (Button)sender;
-            coinButton.DoDragDrop(coinButton.Tag, DragDropEffects.Copy);
+            PictureBox picture = (PictureBox)sender;
+            decimal coinValue = (decimal)picture.Tag;
+            picture.DoDragDrop(coinValue, DragDropEffects.Copy);
         }
 
         private void CoinSlot_DragEnter(object sender, DragEventArgs e)
@@ -617,6 +804,7 @@ namespace VendingMachine___Badr_Almashrea___30139708
             if (e.Data.GetDataPresent(typeof(decimal)))
             {
                 e.Effect = DragDropEffects.Copy;
+                picCoinSlot.BackColor = Color.FromArgb(100, 100, 100);
             }
             else
             {
@@ -626,66 +814,22 @@ namespace VendingMachine___Badr_Almashrea___30139708
 
         private void CoinSlot_DragDrop(object sender, DragEventArgs e)
         {
+            picCoinSlot.BackColor = Color.FromArgb(80, 80, 80);
+
             if (!inCheckoutMode) return;
 
-            decimal coinValue = (decimal)e.Data.GetData(typeof(decimal));
-            amountPaid += coinValue;
-
-            lblTotal.Text = $"Total: �{totalCost:F2} | Paid: �{amountPaid:F2} | Due: �{Math.Max(0, totalCost - amountPaid):F2}";
-
-            if (amountPaid >= totalCost)
+            try
             {
-                CompletePayment();
+                decimal coinValue = (decimal)e.Data.GetData(typeof(decimal));
+                ProcessCoinPayment(coinValue);
+            }
+            catch (Exception ex)
+            {
+                LogError($"Payment processing error: {ex.Message}");
+                ShowErrorMessage("Payment processing failed. Please try again.");
             }
         }
 
-        private void CompletePayment()
-        {
-            decimal change = amountPaid - totalCost;
-
-            // Deduct stock for sold products
-            foreach (var productGroup in selectedProducts.GroupBy(p => p.ProductCode))
-            {
-                Product product = allProducts.First(p => p.ProductCode == productGroup.Key);
-                product.Stock -= productGroup.Count();
-            }
-
-            // Save updated stock to file
-            SaveStockToFile();
-
-            // Save transaction to file
-            SaveTransactionToFile(change);
-
-            // Show success message
-            string message = $"Payment successful! Thank you for your purchase.\n";
-            if (change > 0)
-            {
-                message += $"Change due: �{change:F2}";
-            }
-
-            MessageBox.Show(message, "Payment Complete", MessageBoxButtons.OK, MessageBoxIcon.Information);
-
-            // Reset for next customer
-            ResetAfterPayment();
-        }
-
-        private void ResetAfterPayment()
-        {
-            selectedProducts.Clear();
-            totalCost = 0;
-            amountPaid = 0;
-            inCheckoutMode = false;
-
-            listBoxProducts.Items.Clear();
-            lblTotal.Text = "Total: �0.00";
-
-            UpdateStockDisplays();
-            DisableCoinButtons();
-
-            btnCheckout.Enabled = true;
-        }
-
-        // Drag and Drop for Product Removal
         private void ListBoxProducts_MouseDown(object sender, MouseEventArgs e)
         {
             if (inCheckoutMode) return;
@@ -707,7 +851,7 @@ namespace VendingMachine___Badr_Almashrea___30139708
             if (e.Data.GetDataPresent(typeof(Product)) && !inCheckoutMode)
             {
                 e.Effect = DragDropEffects.Move;
-                picTrash.BackColor = Color.DarkRed;
+                picTrash.BackColor = Color.FromArgb(200, 40, 40);
             }
             else
             {
@@ -717,81 +861,464 @@ namespace VendingMachine___Badr_Almashrea___30139708
 
         private void Trash_DragDrop(object sender, DragEventArgs e)
         {
-            picTrash.BackColor = Color.Red;
+            picTrash.BackColor = Color.FromArgb(220, 60, 60);
 
             if (inCheckoutMode) return;
 
-            Product productToRemove = (Product)e.Data.GetData(typeof(Product));
-
-            if (productToRemove != null)
+            if (e.Data.GetDataPresent(typeof(Product)))
             {
-                // Remove the first occurrence of this product
-                var itemToRemove = selectedProducts.FirstOrDefault(p => p.ProductCode == productToRemove.ProductCode);
-                if (itemToRemove != null)
+                Product productToRemove = (Product)e.Data.GetData(typeof(Product));
+                RemoveProductFromOrder(productToRemove);
+            }
+        }
+        #endregion
+
+        #region Business Logic Methods
+        private void ProcessCoinPayment(decimal coinValue)
+        {
+            amountPaid += coinValue;
+
+            decimal progressPercentage = (amountPaid / totalCost) * 100;
+            progressPayment.Value = (int)Math.Min(progressPercentage, 100);
+
+            UpdatePaymentStatus();
+            UpdateStatus($"Payment received: {coinValue:C}. Total paid: {amountPaid:C} 💰", false);
+
+            if (amountPaid >= totalCost)
+            {
+                CompletePayment();
+            }
+        }
+
+        private void CompletePayment()
+        {
+            decimal change = amountPaid - totalCost;
+
+            try
+            {
+                UpdateProductStock();
+
+                string invoiceNumber = GenerateInvoiceNumber();
+                SaveInvoiceToFile(invoiceNumber, change);
+                SaveTransactionToFile(change);
+                UpdateMachineStatistics();
+                ShowPaymentSuccess(invoiceNumber, change);
+                ResetAfterPayment();
+                UpdateStatus($"Transaction #{invoiceNumber} completed successfully! 🎉", false);
+            }
+            catch (Exception ex)
+            {
+                LogError($"Payment completion error: {ex.Message}");
+                ShowErrorMessage("Transaction failed! Please contact support.");
+            }
+        }
+
+        private void UpdateProductStock()
+        {
+            foreach (var productGroup in selectedProducts.GroupBy(p => p.ProductCode))
+            {
+                Product product = allProducts.First(p => p.ProductCode == productGroup.Key);
+                product.Stock -= productGroup.Count();
+            }
+            SaveStockToFile();
+        }
+
+        private void UpdateMachineStatistics()
+        {
+            machineSettings.TotalRevenue += totalCost;
+            machineSettings.TotalTransactions++;
+            SaveMachineSettings();
+        }
+
+        private void RemoveProductFromOrder(Product productToRemove)
+        {
+            var itemToRemove = selectedProducts.FirstOrDefault(p => p.ProductCode == productToRemove.ProductCode);
+            if (itemToRemove != null)
+            {
+                selectedProducts.Remove(itemToRemove);
+                UpdateDisplay();
+                UpdateStatus($"Removed {itemToRemove.Name} from cart. ❌", false);
+            }
+        }
+        #endregion
+
+        #region Display Update Methods
+        private void UpdateDisplay()
+        {
+            UpdateListBox();
+            UpdateTotalDisplay();
+            UpdateItemsCount();
+            UpdateStockDisplays();
+        }
+
+        private void UpdateListBox()
+        {
+            listBoxProducts.Items.Clear();
+            listBoxProducts.BackColor = selectedProducts.Count > 0 ? Color.FromArgb(250, 250, 252) : Color.White;
+
+            var groupedProducts = selectedProducts
+                .GroupBy(p => p.ProductCode)
+                .Select(g => new
                 {
-                    selectedProducts.Remove(itemToRemove);
-                    UpdateDisplay();
-                    MessageBox.Show($"Removed {itemToRemove.Name} from your order.", "Item Removed");
+                    Product = g.First(),
+                    Quantity = g.Count(),
+                    Subtotal = g.First().Price * g.Count()
+                })
+                .OrderBy(g => g.Product.Name);
+
+            foreach (var group in groupedProducts)
+            {
+                string displayText = group.Quantity > 1
+                    ? $"{group.Product.Name} ×{group.Quantity} @ £{group.Product.Price:F2} = £{group.Subtotal:F2}"
+                    : $"{group.Product.Name} - £{group.Product.Price:F2}";
+
+                listBoxProducts.Items.Add(displayText);
+            }
+        }
+
+        private void UpdateTotalDisplay()
+        {
+            totalCost = selectedProducts.Sum(p => p.Price);
+            lblTotal.Text = $"Total: £{totalCost:F2}";
+            lblTotal.ForeColor = totalCost > 0 ? colorSuccess : Color.Gray;
+        }
+
+        private void UpdateItemsCount()
+        {
+            int itemCount = selectedProducts.Count;
+            lblItemsCount.Text = itemCount > 0 ? $"Items: {itemCount}" : "Cart is empty";
+            lblItemsCount.ForeColor = itemCount > 0 ? colorPrimary : Color.Gray;
+        }
+
+        private void UpdatePaymentStatus()
+        {
+            if (!inCheckoutMode)
+            {
+                lblPaymentStatus.Text = "Please add items and click checkout to pay";
+                lblPaymentStatus.ForeColor = colorPrimary;
+                return;
+            }
+
+            if (amountPaid >= totalCost)
+            {
+                lblPaymentStatus.Text = "Payment Complete! ✅";
+                lblPaymentStatus.ForeColor = colorSuccess;
+            }
+            else if (amountPaid > 0)
+            {
+                decimal remaining = totalCost - amountPaid;
+                lblPaymentStatus.Text = $"Paid: £{amountPaid:F2} | Due: £{remaining:F2}";
+                lblPaymentStatus.ForeColor = colorWarning;
+            }
+            else
+            {
+                lblPaymentStatus.Text = $"Total Due: £{totalCost:F2} - Please make payment";
+                lblPaymentStatus.ForeColor = colorPrimary;
+            }
+        }
+
+        private void UpdateStockDisplays()
+        {
+            foreach (Control control in flowLayoutProducts.Controls)
+            {
+                if (control is Panel card && card.Tag is string productCode)
+                {
+                    Product product = allProducts.FirstOrDefault(p => p.ProductCode == productCode);
+                    if (product != null)
+                    {
+                        Label stockLabel = card.Controls.OfType<Label>()
+                            .FirstOrDefault(l => l.Text.StartsWith("Stock:") || l.Text == "OUT OF STOCK");
+
+                        if (stockLabel != null)
+                        {
+                            stockLabel.Text = product.Stock > 0 ? $"Stock: {product.Stock}" : "OUT OF STOCK";
+                            stockLabel.ForeColor = product.Stock > 0 ? Color.Gray : colorDanger;
+                        }
+
+                        Button addButton = card.Controls.OfType<Button>().FirstOrDefault();
+                        if (addButton != null)
+                        {
+                            addButton.Enabled = product.Stock > 0 && !inCheckoutMode;
+                            addButton.BackColor = product.Stock > 0 ? colorPrimary : Color.LightGray;
+                        }
+
+                        card.BackColor = product.Stock > 0 ? Color.White : Color.FromArgb(250, 250, 250);
+                    }
                 }
+            }
+        }
+
+        private void UpdateProductCardsState(bool enabled)
+        {
+            foreach (Control control in flowLayoutProducts.Controls)
+            {
+                if (control is Panel card)
+                {
+                    Button addButton = card.Controls.OfType<Button>().FirstOrDefault();
+                    if (addButton != null)
+                    {
+                        string productCode = (string)addButton.Tag;
+                        Product product = allProducts.FirstOrDefault(p => p.ProductCode == productCode);
+                        addButton.Enabled = enabled && (product != null && product.Stock > 0);
+                    }
+                }
+            }
+        }
+
+        private void UpdateStatus(string message, bool isError)
+        {
+            lblStatus.Text = $"[{DateTime.Now:HH:mm:ss}] {message}";
+            lblStatus.ForeColor = isError ? colorDanger : Color.White;
+            LogActivity(message);
+        }
+
+        private void UpdateDateTimeDisplay()
+        {
+            lblDateTime.Text = $"{DateTime.Now:dddd, MMMM dd, yyyy} | {DateTime.Now:HH:mm:ss}";
+        }
+        #endregion
+
+        #region Utility Methods
+        private void DisableCoinButtons()
+        {
+            foreach (Control control in panelCoins.Controls)
+            {
+                control.Enabled = false;
+                control.BackColor = Color.LightGray;
+            }
+        }
+
+        private void EnableCoinButtons()
+        {
+            foreach (Control control in panelCoins.Controls)
+            {
+                control.Enabled = true;
+                decimal value = (decimal)control.Tag;
+                control.BackColor = value >= 5.00m ? Color.LightGreen :
+                                  value >= 1.00m ? Color.Gold : Color.Silver;
             }
         }
 
         private Product FindProductFromDisplayText(string displayText)
         {
-            // Extract product name from display text
-            string productName = displayText.Split(new[] { " x", " - " }, StringSplitOptions.None)[0];
+            string productName = displayText.Split(new[] { " ×", " - ", " @" }, StringSplitOptions.RemoveEmptyEntries)[0];
             return allProducts.FirstOrDefault(p => displayText.Contains(p.Name));
+        }
+
+        private string GenerateInvoiceNumber()
+        {
+            string timestamp = DateTime.Now.ToString("yyyyMMddHHmmss");
+            Random random = new Random();
+            return $"INV-{timestamp}-{random.Next(1000, 9999)}";
+        }
+
+        private void AnimateButton(Control button)
+        {
+            Color originalColor = button.BackColor;
+            button.BackColor = Color.LightGreen;
+
+            System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer();
+            timer.Interval = 200;
+            timer.Tick += (s, e) =>
+            {
+                button.BackColor = originalColor;
+                timer.Stop();
+                timer.Dispose();
+            };
+            timer.Start();
+        }
+        #endregion
+
+        #region File Operations
+        private void SaveInvoiceToFile(string invoiceNumber, decimal change)
+        {
+            try
+            {
+                StringBuilder invoice = new StringBuilder();
+                invoice.AppendLine("╔════════════════════════════════════════╗");
+                invoice.AppendLine("║           VENDING MACHINE RECEIPT      ║");
+                invoice.AppendLine("╠════════════════════════════════════════╣");
+                invoice.AppendLine($"║ Invoice: {invoiceNumber,-25} ║");
+                invoice.AppendLine($"║ Date:    {DateTime.Now:yyyy-MM-dd HH:mm:ss,-20} ║");
+                invoice.AppendLine($"║ Student: {studentNumber,-25} ║");
+                invoice.AppendLine("╠════════════════════════════════════════╣");
+                invoice.AppendLine("║               ITEMS SOLD               ║");
+                invoice.AppendLine("╠════════════════════════════════════════╣");
+
+                var groupedItems = selectedProducts
+                    .GroupBy(p => p.ProductCode)
+                    .Select(g => new
+                    {
+                        Name = g.First().Name,
+                        Quantity = g.Count(),
+                        Price = g.First().Price,
+                        Subtotal = g.Count() * g.First().Price
+                    });
+
+                foreach (var item in groupedItems)
+                {
+                    string itemLine = $"║ {item.Quantity,-2}× {item.Name,-20} £{item.Subtotal,6:F2} ║";
+                    invoice.AppendLine(itemLine);
+                }
+
+                invoice.AppendLine("╠════════════════════════════════════════╣");
+                invoice.AppendLine($"║ TOTAL:                    £{totalCost,8:F2} ║");
+                invoice.AppendLine($"║ AMOUNT PAID:              £{amountPaid,8:F2} ║");
+                invoice.AppendLine($"║ CHANGE:                   £{change,8:F2} ║");
+                invoice.AppendLine("╠════════════════════════════════════════╣");
+                invoice.AppendLine($"║ Machine: {machineSettings.MachineId,-26} ║");
+                invoice.AppendLine($"║ Location: {machineSettings.Location,-24} ║");
+                invoice.AppendLine("╚════════════════════════════════════════╝");
+
+                File.AppendAllText(invoicesFile, invoice.ToString() + Environment.NewLine + Environment.NewLine);
+
+                string transactionFile = Path.Combine(transactionsFolder, $"{invoiceNumber}.txt");
+                File.WriteAllText(transactionFile, invoice.ToString());
+
+                LogActivity($"Invoice {invoiceNumber} saved successfully");
+            }
+            catch (Exception ex)
+            {
+                LogError($"Invoice save error: {ex.Message}");
+            }
         }
 
         private void SaveTransactionToFile(decimal change)
         {
             try
             {
-                string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                string fileName = Path.Combine(transactionsFolder, $"Transaction_{timestamp}.txt");
-
-                using (StreamWriter writer = new StreamWriter(fileName))
-                {
-                    writer.WriteLine("=== VENDING MACHINE RECEIPT ===");
-                    writer.WriteLine($"Student ID: {studentNumber}");
-                    writer.WriteLine($"Date: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-                    writer.WriteLine("--------------------------------");
-
-                    // Write items with quantities
-                    var groupedItems = selectedProducts
-                        .GroupBy(p => p.Name)
-                        .Select(g => $"{g.Key} x{g.Count()} @ �{g.First().Price:F2} = �{g.Count() * g.First().Price:F2}");
-
-                    foreach (string item in groupedItems)
-                    {
-                        writer.WriteLine(item);
-                    }
-
-                    writer.WriteLine("--------------------------------");
-                    writer.WriteLine($"TOTAL: �{totalCost:F2}");
-                    writer.WriteLine($"AMOUNT PAID: �{amountPaid:F2}");
-                    writer.WriteLine($"CHANGE: �{change:F2}");
-                    writer.WriteLine("================================");
-                }
-
-                // Also append to main log file
-                string logFile = Path.Combine(transactionsFolder, "AllTransactions.log");
-                using (StreamWriter logWriter = new StreamWriter(logFile, true))
-                {
-                    logWriter.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss} - �{totalCost:F2} - {studentNumber}");
-                }
+                string logEntry = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} | Invoice | Total: £{totalCost:F2} | Paid: £{amountPaid:F2} | Change: £{change:F2} | Student: {studentNumber}";
+                string logFile = Path.Combine("Logs", $"Transactions_{DateTime.Now:yyyyMMdd}.log");
+                File.AppendAllText(logFile, logEntry + Environment.NewLine);
             }
             catch (Exception ex)
             {
-                // Don't crash if file saving fails
-                Console.WriteLine("Could not save transaction: " + ex.Message);
+                LogError($"Transaction log error: {ex.Message}");
             }
         }
 
-        // Form closing event to save stock
+        private void LogError(string errorMessage)
+        {
+            try
+            {
+                string logEntry = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} | ERROR | {errorMessage}";
+                string logFile = Path.Combine("Logs", $"Errors_{DateTime.Now:yyyyMMdd}.log");
+                File.AppendAllText(logFile, logEntry + Environment.NewLine);
+            }
+            catch
+            {
+                // Silent fail for error logging
+            }
+        }
+
+        private void LogActivity(string activity)
+        {
+            try
+            {
+                string logEntry = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} | ACTIVITY | {activity}";
+                string logFile = Path.Combine("Logs", $"Activity_{DateTime.Now:yyyyMMdd}.log");
+                File.AppendAllText(logFile, logEntry + Environment.NewLine);
+            }
+            catch
+            {
+                // Silent fail for activity logging
+            }
+        }
+        #endregion
+
+        #region UI Feedback Methods
+        private void ShowPaymentSuccess(string invoiceNumber, decimal change)
+        {
+            StringBuilder successMessage = new StringBuilder();
+            successMessage.AppendLine("🎉 PAYMENT SUCCESSFUL! 🎉");
+            successMessage.AppendLine();
+            successMessage.AppendLine($"Invoice: {invoiceNumber}");
+            successMessage.AppendLine($"Date: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            successMessage.AppendLine();
+            successMessage.AppendLine("Items Purchased:");
+
+            var groupedItems = selectedProducts
+                .GroupBy(p => p.ProductCode)
+                .Select(g => $"  • {g.First().Name} ×{g.Count()} @ £{g.First().Price:F2}");
+
+            foreach (var item in groupedItems)
+            {
+                successMessage.AppendLine(item);
+            }
+
+            successMessage.AppendLine();
+            successMessage.AppendLine($"Total: £{totalCost:F2}");
+            successMessage.AppendLine($"Paid: £{amountPaid:F2}");
+
+            if (change > 0)
+            {
+                successMessage.AppendLine($"Change: £{change:F2}");
+                successMessage.AppendLine();
+                successMessage.AppendLine("Please collect your change! 💰");
+            }
+
+            successMessage.AppendLine();
+            successMessage.AppendLine("Thank you for your purchase! 🙏");
+
+            MessageBox.Show(successMessage.ToString(), "Payment Successful",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+        private void ShowInformationMessage(string message)
+        {
+            MessageBox.Show(message, "Information",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+        private void ShowWarningMessage(string message)
+        {
+            MessageBox.Show(message, "Warning",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+
+        private void ShowErrorMessage(string message)
+        {
+            MessageBox.Show(message, "Error",
+                MessageBoxButtons.OK, MessageBoxIcon.Error);
+            UpdateStatus($"Error: {message}", true);
+        }
+        #endregion
+
+        #region Timer and Cleanup
+        private void timerDateTime_Tick(object sender, EventArgs e)
+        {
+            UpdateDateTimeDisplay();
+        }
+
+        private void ResetAfterPayment()
+        {
+            selectedProducts.Clear();
+            totalCost = 0;
+            amountPaid = 0;
+            inCheckoutMode = false;
+
+            UpdateDisplay();
+            UpdateProductCardsState(true);
+            DisableCoinButtons();
+            btnCheckout.Enabled = true;
+            progressPayment.Visible = false;
+            UpdatePaymentStatus();
+        }
+
         private void Form1_FormClosing(object sender, FormClosingEventArgs e)
         {
-            SaveStockToFile();
+            try
+            {
+                SaveStockToFile();
+                SaveMachineSettings();
+                timerDateTime.Stop();
+                LogActivity("Application closed gracefully");
+            }
+            catch (Exception ex)
+            {
+                LogError($"Form closing error: {ex.Message}");
+            }
         }
+        #endregion
     }
 }
